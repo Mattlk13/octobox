@@ -1,8 +1,25 @@
 var Octobox = (function() {
 
+  var maybeConfirm = function(message){
+    if($('body.disable_confirmations').length){
+      return true
+    } else {
+      return confirm(message);
+    }
+  }
+
   var checkSelectAll = function() {
     $(".js-select_all").click();
   };
+
+  var updatePinnedSearchCounts = function(pinned_search) {
+    var pinned_search = $(pinned_search);
+    $.get(pinned_search.data('url'), function(data) {
+      pinned_search.html(data.count);
+    }).fail(function() {
+      pinned_search.remove(); // Remove the total value if there's an error
+    });
+  }
 
   var moveCursorToClickedRow = function(event) {
     // Don't event.preventDefault(), since we want the
@@ -117,7 +134,7 @@ var Octobox = (function() {
     window.current_id = undefined;
 
     $(document).keydown(function(e) {
-      // disable shortcuts for the seach and comment
+      // disable shortcuts for the search and comment
       if ($("#help-box").length && !["search-box","comment_body"].includes(e.target.id)  && !e.ctrlKey && !e.metaKey) {
         var shortcutFunction = (!e.shiftKey ? shortcuts : shiftShortcuts)[e.which] ;
         if (shortcutFunction) { shortcutFunction(e) }
@@ -150,7 +167,7 @@ var Octobox = (function() {
   };
 
   var mute = function(ids){
-    var result = confirm("Are you sure you want to mute?");
+    var result = maybeConfirm("Are you sure you want to mute?");
     if (result) {
       $.post( "/notifications/mute_selected" + location.search, { "id[]": ids})
       .done(function() {
@@ -248,7 +265,11 @@ var Octobox = (function() {
     if($("a.js-sync.js-async").length) {
       $.get("/notifications/sync.json", refreshOnSync);
     } else {
+      if(!$(".js-sync .octicon").hasClass("spinning")){
+        $(".js-sync .octicon").addClass("spinning");
+      }
       Turbolinks.visit($("a.js-sync").attr("href"))
+      $(".sync .octicon").removeClass("spinning");
     }
   };
 
@@ -385,6 +406,11 @@ var Octobox = (function() {
       setAutoSyncTimer();
     }
 
+    // Unread counts for pinned searches
+    $("span.pinned-search-count").each(function() {
+      updatePinnedSearchCounts(this);
+    });
+
     // Sync Handling
     if($(".js-is_syncing").length){ refreshOnSync() }
     if($(".js-start_sync").length){ sync() }
@@ -403,7 +429,7 @@ var Octobox = (function() {
   };
 
   var deleteNotifications = function(ids){
-    var result = confirm("Are you sure you want to delete?");
+    var result = maybeConfirm("Are you sure you want to delete?");
     if (result) {
       $.post("/notifications/delete_selected" + location.search, {"id[]": ids})
       .done(function() {

@@ -437,6 +437,19 @@ class NotificationsControllerTest < ActionDispatch::IntegrationTest
     assert_equal [notification_count, 20].min, json["pagination"]["per_page"]
   end
 
+  test 'renders author for notifications in json' do
+    sign_in_as(@user)
+    notification = create(:notification, user: @user, subject_type: 'Issue')
+    create(:subject, notifications: [notification], author: 'andrew')
+
+    get notifications_path(format: :json)
+
+    assert_response :success
+    json = Oj.load(response.body)
+    found_notification = json["notifications"].find { |n| n["id"] == notification.id }
+    assert found_notification["subject"]["author"]
+  end
+
   test 'renders pagination info for zero notifications in json' do
     sign_in_as(@user)
     Notification.destroy_all
@@ -620,6 +633,27 @@ class NotificationsControllerTest < ActionDispatch::IntegrationTest
     create(:subject, notifications: [notification2], author: 'benjam')
     get '/?q=author%3Aandrew'
     assert_equal assigns(:notifications).length, 1
+  end
+
+  test 'search results can filter by number' do
+    sign_in_as(@user)
+    notification1 = create(:notification, user: @user, subject_type: 'Issue')
+    notification2 = create(:notification, user: @user, subject_type: 'PullRequest')
+    subject1 = create(:subject, notifications: [notification1])
+    subject2 = create(:subject, notifications: [notification2])
+    get '/?q=number%3A' + subject1.url.scan(/\d+$/).first
+    assert_equal assigns(:notifications).length, 1
+    assert_equal assigns(:notifications).first.subject_url, subject1.url
+  end
+
+  test 'search results can filter by multiple numbers' do
+    sign_in_as(@user)
+    notification1 = create(:notification, user: @user, subject_type: 'Issue')
+    notification2 = create(:notification, user: @user, subject_type: 'PullRequest')
+    subject1 = create(:subject, notifications: [notification1])
+    subject2 = create(:subject, notifications: [notification2])
+    get '/?q=number%3A' + subject1.url.scan(/\d+$/).first + '%2C' + subject2.url.scan(/\d+$/).first
+    assert_equal assigns(:notifications).length, 2
   end
 
   test 'search results can filter by draft' do

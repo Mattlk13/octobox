@@ -2,6 +2,12 @@ class Search
   attr_accessor :parsed_query
   attr_accessor :scope
 
+  def self.initialize_for_saved_search(query:, user:, params: {})
+    eager_load_relation = [{subject: :labels}, {repository: {app_installation: {subscription_purchase: :subscription_plan}}}]
+    scope = user.notifications.includes(eager_load_relation)
+    Search.new(query: query, scope: scope, params: params)
+  end
+
   def initialize(query: '', scope:, params: {})
     @parsed_query = SearchParser.new(query)
     @scope = scope
@@ -25,6 +31,8 @@ class Search
     res = res.exclude_state(exclude_state) if exclude_state.present?
     res = res.author(author) if author.present?
     res = res.exclude_author(exclude_author) if exclude_author.present?
+    res = res.number(number) if number.present?
+    res = res.exclude_number(exclude_number) if exclude_number.present?
     res = res.assigned(assignee) if assignee.present?
     res = res.exclude_assigned(exclude_assignee) if exclude_assignee.present?
     res = res.status(status) if status.present?
@@ -67,14 +75,14 @@ class Search
     end
 
     @parsed_query[:archived] = ['true'] if params[:archive].present?
-    @parsed_query[:inbox] = ['true'] if params[:archive].blank? && params[:starred].blank? && params[:q].blank?
+    @parsed_query[:inbox] = ['true'] if @parsed_query[:archived].blank? && params[:archive].blank? && params[:starred].blank? && params[:q].blank?
 
     [:reason, :type, :unread, :state, :is_private, :draft].each do |filter|
       next if params[filter].blank?
       @parsed_query[filter] = Array(params[filter]).map(&:underscore)
     end
 
-    [:repo, :owner, :author].each do |filter|
+    [:repo, :owner, :author, :number].each do |filter|
       next if params[filter].blank?
       @parsed_query[filter] = Array(params[filter])
     end
@@ -157,6 +165,14 @@ class Search
 
   def exclude_author
     parsed_query[:'-author']
+  end
+
+  def number
+    parsed_query[:number]
+  end
+
+  def exclude_number
+    parsed_query[:'-number']
   end
 
   def unread

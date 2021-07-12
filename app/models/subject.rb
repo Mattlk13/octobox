@@ -44,30 +44,16 @@ class Subject < ApplicationRecord
     involved_user_ids.each { |user_id| SyncNotificationsWorker.perform_in(1.minutes, user_id) }
   end
 
-  def self.sync(remote_subject)
-    subject = Subject.find_or_create_by(url: remote_subject['url'])
-
-    # webhook payloads don't always have 'repository' info
-    if remote_subject['repository']
-      full_name = remote_subject['repository']['full_name']
-    elsif remote_subject['full_name']
-      full_name = remote_subject['full_name']
-    else
-      full_name = extract_full_name(remote_subject['url'])
-    end
-
-    comment_count = remote_subject['comments'] || remote_subject.fetch('commit', {})['comment_count']
-    comment_count = subject.comment_count if comment_count.nil?
-
-    subject.update({
-      repository_full_name: full_name,
+  def sync(remote_subject)
+    update({
+      repository_full_name: extract_full_name_from_remote_subject(remote_subject),
       github_id: remote_subject['id'],
       state: remote_subject['merged_at'].present? ? 'merged' : remote_subject['state'],
       author: remote_subject.fetch('user', {})['login'],
       html_url: remote_subject['html_url'],
       created_at: remote_subject['created_at'] || Time.current,
       updated_at: remote_subject['updated_at'] || Time.current,
-      comment_count: comment_count,
+      comment_count: extract_comment_count_from_remote_subject(remote_subject) || comment_count,
       assignees: ":#{Array(remote_subject['assignees'].try(:map) {|a| a['login'] }).join(':')}:",
       locked: remote_subject['locked'],
       sha: remote_subject.fetch('head', {})['sha'],
@@ -75,12 +61,17 @@ class Subject < ApplicationRecord
       draft: remote_subject['draft']
     })
 
-    return unless subject.persisted?
+    return unless persisted?
 
-    subject.update_labels(remote_subject['labels']) if remote_subject['labels'].present?
-    subject.update_comments if Octobox.include_comments? && (subject.has_comments? || subject.pull_request?)
-    subject.update_status
-    subject.sync_involved_users if (subject.saved_changes.keys & subject.notifiable_fields).any?
+    update_labels(remote_subject['labels']) if remote_subject['labels'].present?
+    update_comments if Octobox.include_comments? && (has_comments? || pull_request?)
+    update_status
+    sync_involved_users if (saved_changes.keys & notifiable_fields).any?
+  end
+
+  def self.sync(remote_subject)
+    subject = Subject.find_or_create_by(url: remote_subject['url'])
+    subject.sync(remote_subject)
   end
 
   def self.sync_status(sha, repository_full_name)
@@ -88,6 +79,7 @@ class Subject < ApplicationRecord
   end
 
   def self.sync_comments(remote_subject)
+    return if remote_subject.nil?
     subject = Subject.find_by(url: remote_subject['url'])
     Subject.sync(remote_subject) if subject.nil?
     return if subject.nil?
@@ -133,6 +125,7 @@ class Subject < ApplicationRecord
     end
     return unless remote_comments.present?
     remote_comments.each do |remote_comment|
+      next if remote_comment.nil?
       comments.find_or_create_by(github_id: remote_comment.id) do |comment|
         comment.author = remote_comment.user.try(:login)
         comment.url = remote_comment.url
@@ -209,7 +202,7 @@ class Subject < ApplicationRecord
     reviews = github_client.get(url + '/reviews', since: comments.order('created_at ASC').last.try(:created_at))
     return [] unless reviews.present?
     reviews.map { |review|
-      if review[:state] == "COMMENTED"
+      if review && review[:state] == "COMMENTED"
         reviews.concat download_comments_for_review(review)
         reviews.delete(review)
       end
@@ -243,13 +236,28 @@ class Subject < ApplicationRecord
     end
   end
 
-  def self.extract_full_name(url)
+  def extract_full_name_from_remote_subject(remote_subject)
+    # webhook payloads don't always have 'repository' info
+    if remote_subject['repository']
+      remote_subject['repository']['full_name']
+    elsif remote_subject['full_name']
+      remote_subject['full_name']
+    else
+      extract_full_name(remote_subject['url'])
+    end
+  end
+
+  def extract_full_name(url)
     url.match(/\/repos\/([\w.-]+\/[\w.-]+)\//)[1]
   end
 
+  def extract_comment_count_from_remote_subject(remote_subject)
+    remote_subject['comments'] || remote_subject.fetch('commit', {})['comment_count']
+  end
+
   def involved_user_ids
-    involved_users = users.with_access_token.not_recently_synced
-    involved_users += repository.users.with_access_token.not_recently_synced if repository.present?
+    involved_users = users.with_access_token.not_recently_synced.active
+    involved_users += repository.users.with_access_token.not_recently_synced.active if repository.present?
     involved_users.uniq.reject(&:syncing?).map(&:id)
   end
 
