@@ -268,7 +268,9 @@ GEM
       actionpack (>= 4.2)
       omniauth (~> 2.0)
     ostruct (0.6.3)
-    pagy (9.4.0)
+    pagy (43.2.6)
+      json
+      yaml
     pg (1.6.3)
     pg (1.6.3-arm64-darwin)
     pg (1.6.3-x86_64-darwin)
@@ -447,6 +449,7 @@ GEM
       base64
       websocket-extensions (>= 0.1.0)
     websocket-extensions (0.1.5)
+    yaml (0.4.0)
     yard (0.9.38)
     zeitwerk (2.7.4)
     zlib (3.2.2)
@@ -488,7 +491,7 @@ DEPENDENCIES
   oj
   omniauth-github (= 2.0.1)
   omniauth-rails_csrf_protection
-  pagy (~> 9.4.0)
+  pagy (~> 43.2.6)
   pg
   pg_search
   psych
